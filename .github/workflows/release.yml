@@ -78,21 +78,21 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: bundle-dmg
-          path: src-tauri/target/aarch64-apple-darwin/release/bundle/dmg/*.dmg
+          path: target/aarch64-apple-darwin/release/bundle/dmg/*.dmg
           if-no-files-found: error
 
       - name: Upload tar.gz
         uses: actions/upload-artifact@v4
         with:
           name: bundle-tar
-          path: src-tauri/target/aarch64-apple-darwin/release/bundle/macos/*.tar.gz
+          path: target/aarch64-apple-darwin/release/bundle/macos/*.tar.gz
           if-no-files-found: error
 
       - name: Upload .sig
         uses: actions/upload-artifact@v4
         with:
           name: bundle-sig
-          path: src-tauri/target/aarch64-apple-darwin/release/bundle/macos/*.sig
+          path: target/aarch64-apple-darwin/release/bundle/macos/*.sig
           if-no-files-found: warn
 
   publish-release:
