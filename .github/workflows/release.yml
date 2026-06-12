@@ -74,6 +74,43 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
 
+      - name: Fix code signing (ad-hoc resign for macOS Gatekeeper)
+        run: |
+          APP_PATH="target/aarch64-apple-darwin/release/bundle/macos/BongoCat.app"
+          echo "Removing extended attributes..."
+          xattr -cr "$APP_PATH" 2>/dev/null || true
+          echo "Re-signing with ad-hoc signature..."
+          codesign --force --deep --sign - "$APP_PATH" 2>&1
+          echo "Verifying signature..."
+          codesign -dv "$APP_PATH" 2>&1 || true
+          spctl --assess --verbose "$APP_PATH" 2>&1 || true
+
+      - name: Re-package DMG
+        run: |
+          APP_PATH="target/aarch64-apple-darwin/release/bundle/macos/BongoCat.app"
+          DMG_PATH="target/aarch64-apple-darwin/release/bundle/dmg/BongoCat_1.1.1_aarch64.dmg"
+          DMG_DIR="target/aarch64-apple-darwin/release/bundle/dmg"
+          # Remove old DMG and recreate
+          rm -f "$DMG_PATH"
+          # Create temp directory for DMG contents
+          TMP_DMG=$(mktemp -d)
+          cp -R "$APP_PATH" "$TMP_DMG/"
+          # Create symbolic link to Applications
+          ln -s /Applications "$TMP_DMG/Applications"
+          # Re-create DMG
+          hdiutil create -volname "BongoCat" -srcfolder "$TMP_DMG" -ov -format UDZO "$DMG_PATH"
+          rm -rf "$TMP_DMG"
+          echo "DMG recreated at: $DMG_PATH"
+
+      - name: Re-package tar.gz
+        run: |
+          APP_PATH="target/aarch64-apple-darwin/release/bundle/macos/BongoCat.app"
+          TAR_PATH="target/aarch64-apple-darwin/release/bundle/macos/BongoCat.app.tar.gz"
+          TAR_DIR="target/aarch64-apple-darwin/release/bundle/macos"
+          rm -f "$TAR_PATH"
+          cd "$TAR_DIR" && tar czf "BongoCat.app.tar.gz" "BongoCat.app"
+          echo "tar.gz recreated at: $TAR_PATH"
+
       - name: Upload DMG
         uses: actions/upload-artifact@v4
         with:
