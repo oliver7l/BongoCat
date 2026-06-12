@@ -11,6 +11,7 @@ import { useDebounceFn, useEventListener } from '@vueuse/core'
 import { round } from 'es-toolkit'
 import { nth } from 'es-toolkit/compat'
 import { onMounted, onUnmounted, ref, watch } from 'vue'
+import { useI18n } from 'vue-i18n'
 
 import { useAppMenu } from '@/composables/useAppMenu'
 import { useDevice } from '@/composables/useDevice'
@@ -23,7 +24,9 @@ import { LISTEN_KEY } from '@/constants'
 import { hideWindow, setAlwaysOnTop, setTaskbarVisibility, showWindow } from '@/plugins/window'
 import { useCatStore } from '@/stores/cat'
 import { useGeneralStore } from '@/stores/general.ts'
+import { useMemoStore } from '@/stores/memo'
 import { useModelStore } from '@/stores/model'
+import { usePomodoroStore } from '@/stores/pomodoro'
 import { isImage } from '@/utils/is'
 import live2d from '@/utils/live2d'
 import { join } from '@/utils/path'
@@ -34,6 +37,9 @@ const { startListening } = useDevice()
 const appWindow = getCurrentWebviewWindow()
 const { modelSize, handleLoad, handleDestroy, handleResize, handleKeyChange } = useModel()
 const catStore = useCatStore()
+const memoStore = useMemoStore()
+const pomodoroStore = usePomodoroStore()
+const { t } = useI18n()
 const { getBaseMenu, getExitMenu } = useAppMenu()
 const modelStore = useModelStore()
 const generalStore = useGeneralStore()
@@ -218,4 +224,75 @@ function handleMouseMove(event: MouseEvent) {
 
   <PomodoroTimer />
   <MemoPanel />
+
+  <!-- Floating action buttons -->
+  <div
+    class="fab-bar"
+    :class="{ 'fab-hidden': !memoStore.enabled && !pomodoroStore.enabled }"
+  >
+    <button
+      v-if="memoStore.enabled"
+      class="fab-btn"
+      :class="{ active: memoStore.visible }"
+      :title="t('components.memoPanel.title')"
+      @click="memoStore.toggle()"
+    >
+      <span class="i-lucide:notebook-text size-4" />
+    </button>
+    <button
+      v-if="pomodoroStore.enabled"
+      class="fab-btn"
+      :class="{ active: pomodoroStore.isRunning }"
+      :title="t('pages.preference.pomodoro.title')"
+      @click="pomodoroStore.showPopover = !pomodoroStore.showPopover"
+    >
+      <span class="i-lucide:timer size-4" />
+    </button>
+  </div>
 </template>
+
+<style scoped>
+.fab-bar {
+  position: fixed;
+  bottom: 12px;
+  right: 12px;
+  display: flex;
+  gap: 6px;
+  z-index: 1000;
+  transition: opacity 0.2s;
+}
+
+.fab-hidden {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.fab-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background: rgba(20, 20, 28, 0.8);
+  backdrop-filter: blur(12px);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  color: rgba(255, 255, 255, 0.6);
+  cursor: pointer;
+  transition: all 0.15s;
+  font-size: 14px;
+}
+
+.fab-btn:hover {
+  background: rgba(20, 20, 28, 0.95);
+  border-color: rgba(255, 255, 255, 0.2);
+  color: #fff;
+  transform: scale(1.1);
+}
+
+.fab-btn.active {
+  background: rgba(99, 102, 241, 0.35);
+  border-color: rgba(99, 102, 241, 0.4);
+  color: #a5b4fc;
+}
+</style>

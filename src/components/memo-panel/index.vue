@@ -18,7 +18,8 @@ const searchInputRef = ref<HTMLInputElement>()
 const pasteConfirmVisible = ref(false)
 const previewIds = ref<Set<string>>(new Set())
 
-const shouldShiftUp = computed(() => pomodoroStore.enabled)
+const shouldShiftUp = computed(() => pomodoroStore.showPopover)
+const panelRef = ref<HTMLDivElement>()
 
 function handleSubmit() {
   const content = inputValue.value.trim()
@@ -115,7 +116,20 @@ function handleSearchShortcut(e: KeyboardEvent) {
   }
 }
 
-useEventListener('keydown', handleSearchShortcut)
+function renderTagLink(tag: string) {
+  memoStore.activeTag = memoStore.activeTag === tag ? null : tag
+}
+
+// Click outside to dismiss
+useEventListener('pointerdown', (e: PointerEvent) => {
+  if (!memoStore.visible) return
+  if (!panelRef.value) return
+  if (panelRef.value.contains(e.target as Node)) return
+  // Don't close if clicking the FAB button
+  const target = e.target as HTMLElement
+  if (target.closest('.fab-btn')) return
+  memoStore.hide()
+})
 
 watch(() => memoStore.visible, (val) => {
   if (val) {
@@ -125,365 +139,315 @@ watch(() => memoStore.visible, (val) => {
   }
 })
 
-function renderTagLink(tag: string) {
-  memoStore.activeTag = memoStore.activeTag === tag ? null : tag
-}
+useEventListener('keydown', handleSearchShortcut)
 </script>
 
 <template>
-  <Teleport to="body">
-    <Transition name="memo-fade">
+  <Transition name="popup-slide">
+    <div
+      v-if="memoStore.visible"
+      ref="panelRef"
+      class="memo-popup"
+      :class="{ 'memo-shifted': shouldShiftUp }"
+    >
+      <!-- Header -->
+      <div class="popup-header">
+        <span class="popup-title">{{ t('components.memoPanel.title') }}</span>
+        <button
+          class="popup-close"
+          @click="memoStore.hide()"
+        >
+          <span class="i-lucide:x size-3.5" />
+        </button>
+      </div>
+
+      <!-- Search (only show when > 3 items) -->
       <div
-        v-if="memoStore.enabled && memoStore.visible"
-        class="memo-panel"
-        :class="{ 'memo-shifted': shouldShiftUp }"
+        v-if="memoStore.items.length > 3"
+        class="popup-search"
       >
-        <!-- Header -->
-        <div class="memo-header">
-          <span class="memo-title">{{ t('components.memoPanel.title') }}</span>
-          <div class="memo-header-actions">
-            <button
-              class="memo-btn"
-              :title="t('components.memoPanel.clearAll')"
-              @click="memoStore.clearAll()"
-            >
-              <span class="i-lucide:trash-2 size-3.5" />
-            </button>
-            <button
-              class="memo-btn"
-              :title="t('components.memoPanel.close')"
-              @click="memoStore.hide()"
-            >
-              <span class="i-lucide:x size-3.5" />
-            </button>
-          </div>
-        </div>
-
-        <!-- Search -->
-        <div
-          v-if="memoStore.items.length > 3"
-          class="memo-search"
+        <span class="i-lucide:search size-3 search-icon" />
+        <input
+          ref="searchInputRef"
+          v-model="memoStore.searchQuery"
+          class="search-input"
+          :placeholder="t('components.memoPanel.searchPlaceholder')"
         >
-          <span class="i-lucide:search size-3.5 search-icon" />
-          <input
-            ref="searchInputRef"
-            v-model="memoStore.searchQuery"
-            class="memo-search-input"
-            :placeholder="t('components.memoPanel.searchPlaceholder')"
-          >
-        </div>
+      </div>
 
-        <!-- Tag filter bar -->
-        <div
-          v-if="memoStore.allTags.length > 0"
-          class="memo-tags"
+      <!-- Tags -->
+      <div
+        v-if="memoStore.allTags.length > 0"
+        class="popup-tags"
+      >
+        <button
+          class="tag-chip"
+          :class="{ active: !memoStore.activeTag }"
+          @click="memoStore.activeTag = null"
         >
-          <button
-            class="tag-chip"
-            :class="{ active: !memoStore.activeTag }"
-            @click="memoStore.activeTag = null"
-          >
-            {{ t('components.memoPanel.all') }}
-          </button>
-          <button
-            v-for="[tag, count] in memoStore.allTags"
-            :key="tag"
-            class="tag-chip"
-            :class="{ active: memoStore.activeTag === tag }"
-            @click="memoStore.activeTag = memoStore.activeTag === tag ? null : tag"
-          >
-            #{{ tag }} <span class="tag-count">{{ count }}</span>
-          </button>
-        </div>
+          {{ t('components.memoPanel.all') }}
+        </button>
+        <button
+          v-for="[tag, count] in memoStore.allTags"
+          :key="tag"
+          class="tag-chip"
+          :class="{ active: memoStore.activeTag === tag }"
+          @click="memoStore.activeTag = memoStore.activeTag === tag ? null : tag"
+        >
+          #{{ tag }} <span class="tag-count">{{ count }}</span>
+        </button>
+      </div>
 
-        <!-- Input area -->
-        <div class="memo-input-area">
-          <textarea
-            ref="inputRef"
-            v-model="inputValue"
-            class="memo-textarea"
-            :placeholder="t('components.memoPanel.placeholder')"
-            rows="2"
-            @keydown="handleKeydown"
-            @paste="handlePaste"
-          />
+      <!-- Input -->
+      <div class="popup-input">
+        <textarea
+          ref="inputRef"
+          v-model="inputValue"
+          class="memo-textarea"
+          :placeholder="t('components.memoPanel.placeholder')"
+          rows="2"
+          @keydown="handleKeydown"
+          @paste="handlePaste"
+        />
+        <button
+          class="memo-add-btn"
+          :disabled="!inputValue.trim()"
+          @click="handleSubmit"
+        >
+          {{ t('components.memoPanel.add') }}
+        </button>
+      </div>
+
+      <!-- Paste confirm -->
+      <Transition name="popup-slide">
+        <div
+          v-if="pasteConfirmVisible"
+          class="paste-confirm"
+        >
+          <span class="paste-icon">📋</span>
+          <span class="paste-text">{{ t('components.memoPanel.pasteConfirm') }}</span>
           <button
-            class="memo-add-btn"
-            :disabled="!inputValue.trim()"
+            class="memo-btn memo-btn-sm memo-btn-primary"
             @click="handleSubmit"
           >
-            {{ t('components.memoPanel.add') }}
+            {{ t('components.memoPanel.confirm') }}
+          </button>
+          <button
+            class="memo-btn memo-btn-sm"
+            @click="discardPaste"
+          >
+            {{ t('components.memoPanel.discard') }}
           </button>
         </div>
+      </Transition>
 
-        <!-- Paste confirm bar -->
-        <Transition name="memo-slide">
-          <div
-            v-if="pasteConfirmVisible"
-            class="memo-paste-confirm"
-          >
-            <span class="paste-icon">📋</span>
-            <span class="paste-text">{{ t('components.memoPanel.pasteConfirm') }}</span>
-            <button
-              class="memo-btn memo-btn-sm memo-btn-primary"
-              @click="handleSubmit"
-            >
-              {{ t('components.memoPanel.confirm') }}
-            </button>
-            <button
-              class="memo-btn memo-btn-sm"
-              @click="discardPaste"
-            >
-              {{ t('components.memoPanel.discard') }}
-            </button>
-          </div>
-        </Transition>
-
-        <!-- List -->
+      <!-- List -->
+      <div
+        v-if="memoStore.sortedItems.length > 0"
+        class="popup-list"
+      >
         <div
-          v-if="memoStore.sortedItems.length > 0"
-          class="memo-list"
+          v-for="item in memoStore.sortedItems"
+          :key="item.id"
+          class="memo-item"
         >
-          <div
-            v-for="item in memoStore.sortedItems"
-            :key="item.id"
-            class="memo-item"
-          >
-            <template v-if="editingId === item.id">
-              <textarea
-                v-model="editValue"
-                class="memo-edit-textarea"
-                rows="3"
-                @keydown.enter.ctrl="saveEdit(item.id)"
-                @keydown.escape="cancelEdit"
+          <template v-if="editingId === item.id">
+            <textarea
+              v-model="editValue"
+              class="memo-edit-textarea"
+              rows="3"
+              @keydown.enter.ctrl="saveEdit(item.id)"
+              @keydown.escape="cancelEdit"
+            />
+            <div class="memo-item-actions">
+              <button
+                class="memo-btn memo-btn-sm"
+                @click="saveEdit(item.id)"
+              >
+                {{ t('components.memoPanel.save') }}
+              </button>
+              <button
+                class="memo-btn memo-btn-sm"
+                @click="cancelEdit"
+              >
+                {{ t('components.memoPanel.cancel') }}
+              </button>
+            </div>
+          </template>
+          <template v-else>
+            <div
+              class="memo-item-content"
+              :class="{ 'memo-markdown-preview': previewIds.has(item.id) }"
+              @dblclick="startEdit(item)"
+            >
+              <VueMarkdown
+                v-if="previewIds.has(item.id)"
+                :source="item.content"
               />
+              <template v-else>
+                {{ item.content }}
+              </template>
+            </div>
+            <div class="memo-item-tags">
+              <span
+                v-for="tag in item.tags"
+                :key="tag"
+                class="memo-tag"
+                @click="renderTagLink(tag)"
+              >#{{ tag }}</span>
+            </div>
+            <div class="memo-item-footer">
+              <span class="memo-item-time">{{ formatDate(item.updatedAt) }}</span>
               <div class="memo-item-actions">
                 <button
-                  class="memo-btn memo-btn-sm"
-                  @click="saveEdit(item.id)"
+                  class="memo-btn memo-btn-icon"
+                  :title="previewIds.has(item.id) ? t('components.memoPanel.viewText') : t('components.memoPanel.viewMarkdown')"
+                  @click="togglePreview(item.id)"
                 >
-                  {{ t('components.memoPanel.save') }}
+                  <span
+                    v-if="previewIds.has(item.id)"
+                    class="i-lucide:file-text size-3"
+                  />
+                  <span
+                    v-else
+                    class="i-lucide:eye size-3"
+                  />
                 </button>
                 <button
-                  class="memo-btn memo-btn-sm"
-                  @click="cancelEdit"
+                  class="memo-btn memo-btn-icon"
+                  :title="t('components.memoPanel.edit')"
+                  @click="startEdit(item)"
                 >
-                  {{ t('components.memoPanel.cancel') }}
+                  <span class="i-lucide:pencil size-3" />
+                </button>
+                <button
+                  class="memo-btn memo-btn-icon"
+                  :title="t('components.memoPanel.delete')"
+                  @click="memoStore.removeItem(item.id)"
+                >
+                  <span class="i-lucide:trash-2 size-3" />
                 </button>
               </div>
-            </template>
-            <template v-else>
-              <div
-                class="memo-item-content"
-                :class="{ 'memo-markdown-preview': previewIds.has(item.id) }"
-                @dblclick="startEdit(item)"
-              >
-                <VueMarkdown
-                  v-if="previewIds.has(item.id)"
-                  :source="item.content"
-                />
-                <template v-else>
-                  {{ item.content }}
-                </template>
-              </div>
-              <div class="memo-item-tags">
-                <span
-                  v-for="tag in item.tags"
-                  :key="tag"
-                  class="memo-tag"
-                  @click="renderTagLink(tag)"
-                >#{{ tag }}</span>
-              </div>
-              <div class="memo-item-footer">
-                <span class="memo-item-time">{{ formatDate(item.updatedAt) }}</span>
-                <div class="memo-item-actions">
-                  <button
-                    class="memo-btn memo-btn-icon"
-                    :title="previewIds.has(item.id) ? t('components.memoPanel.viewText') : t('components.memoPanel.viewMarkdown')"
-                    @click="togglePreview(item.id)"
-                  >
-                    <span
-                      v-if="previewIds.has(item.id)"
-                      class="i-lucide:file-text size-3"
-                    />
-                    <span
-                      v-else
-                      class="i-lucide:eye size-3"
-                    />
-                  </button>
-                  <button
-                    class="memo-btn memo-btn-icon"
-                    :title="t('components.memoPanel.edit')"
-                    @click="startEdit(item)"
-                  >
-                    <span class="i-lucide:pencil size-3" />
-                  </button>
-                  <button
-                    class="memo-btn memo-btn-icon"
-                    :title="t('components.memoPanel.delete')"
-                    @click="memoStore.removeItem(item.id)"
-                  >
-                    <span class="i-lucide:trash-2 size-3" />
-                  </button>
-                </div>
-              </div>
-            </template>
-          </div>
-        </div>
-
-        <!-- Empty state -->
-        <div
-          v-else
-          class="memo-empty"
-        >
-          {{ t('components.memoPanel.empty') }}
+            </div>
+          </template>
         </div>
       </div>
-    </Transition>
-  </Teleport>
+
+      <!-- Empty -->
+      <div
+        v-else
+        class="popup-empty"
+      >
+        {{ t('components.memoPanel.empty') }}
+      </div>
+    </div>
+  </Transition>
 </template>
 
 <style scoped>
-.memo-panel {
+.memo-popup {
   position: fixed;
-  bottom: 60px;
-  right: 20px;
-  width: 340px;
-  max-height: 440px;
-  background: rgba(20, 20, 28, 0.92);
-  backdrop-filter: blur(16px);
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  border-radius: 12px;
+  bottom: 76px;
+  right: 12px;
+  width: 300px;
+  max-height: 380px;
+  background: rgba(20, 20, 28, 0.95);
+  backdrop-filter: blur(20px);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 14px;
   color: #e8e8ed;
-  font-size: 13px;
+  font-size: 12px;
   z-index: 999;
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
+  box-shadow: 0 8px 40px rgba(0, 0, 0, 0.6);
 }
 
 .memo-shifted {
-  bottom: 110px;
+  bottom: 128px;
 }
 
-.memo-header {
+.popup-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 10px 12px;
+  padding: 8px 12px;
   border-bottom: 1px solid rgba(255, 255, 255, 0.06);
 }
 
-.memo-title {
+.popup-title {
   font-weight: 600;
-  font-size: 13px;
+  font-size: 12px;
   letter-spacing: 0.3px;
 }
 
-.memo-header-actions {
-  display: flex;
-  gap: 4px;
-}
-
-.memo-btn {
+.popup-close {
   display: inline-flex;
   align-items: center;
   justify-content: center;
   background: rgba(255, 255, 255, 0.08);
   border: none;
-  color: rgba(255, 255, 255, 0.65);
+  color: rgba(255, 255, 255, 0.5);
   cursor: pointer;
   border-radius: 6px;
-  padding: 4px 8px;
-  font-size: 12px;
+  width: 22px;
+  height: 22px;
   transition: background 0.15s, color 0.15s;
 }
 
-.memo-btn:hover {
+.popup-close:hover {
   background: rgba(255, 255, 255, 0.15);
   color: #fff;
 }
 
-.memo-btn:disabled {
-  opacity: 0.35;
-  cursor: not-allowed;
-}
-
-.memo-btn-sm {
-  padding: 3px 8px;
-  font-size: 11px;
-}
-
-.memo-btn-primary {
-  background: rgba(99, 102, 241, 0.5);
-  color: #fff;
-}
-
-.memo-btn-primary:hover {
-  background: rgba(99, 102, 241, 0.75);
-}
-
-.memo-btn-icon {
-  padding: 4px;
-  background: transparent;
-}
-
-.memo-btn-icon:hover {
-  background: rgba(255, 255, 255, 0.12);
-}
-
-.memo-search {
+.popup-search {
   position: relative;
-  padding: 8px 12px 0;
+  padding: 6px 10px 0;
 }
 
 .search-icon {
   position: absolute;
-  left: 20px;
-  top: 16px;
-  color: rgba(255, 255, 255, 0.35);
+  left: 18px;
+  top: 14px;
+  color: rgba(255, 255, 255, 0.3);
   pointer-events: none;
 }
 
-.memo-search-input {
+.search-input {
   width: 100%;
   background: rgba(255, 255, 255, 0.06);
   border: 1px solid rgba(255, 255, 255, 0.08);
   border-radius: 6px;
-  padding: 6px 8px 6px 28px;
+  padding: 5px 7px 5px 24px;
   color: #e8e8ed;
-  font-size: 12px;
+  font-size: 11px;
   outline: none;
   box-sizing: border-box;
 }
 
-.memo-search-input::placeholder {
-  color: rgba(255, 255, 255, 0.3);
+.search-input::placeholder {
+  color: rgba(255, 255, 255, 0.25);
 }
 
-.memo-search-input:focus {
-  border-color: rgba(255, 255, 255, 0.2);
-}
-
-.memo-tags {
+.popup-tags {
   display: flex;
   flex-wrap: wrap;
-  gap: 4px;
-  padding: 8px 12px;
+  gap: 3px;
+  padding: 6px 10px;
   border-bottom: 1px solid rgba(255, 255, 255, 0.04);
 }
 
 .tag-chip {
   display: inline-flex;
   align-items: center;
-  gap: 3px;
+  gap: 2px;
   background: rgba(255, 255, 255, 0.06);
   border: 1px solid rgba(255, 255, 255, 0.06);
-  color: rgba(255, 255, 255, 0.55);
-  padding: 2px 8px;
+  color: rgba(255, 255, 255, 0.5);
+  padding: 2px 7px;
   border-radius: 10px;
-  font-size: 11px;
+  font-size: 10px;
   cursor: pointer;
   transition: all 0.15s;
 }
@@ -501,13 +465,13 @@ function renderTagLink(tag: string) {
 
 .tag-count {
   opacity: 0.5;
-  font-size: 10px;
+  font-size: 9px;
 }
 
-.memo-input-area {
+.popup-input {
   display: flex;
   gap: 6px;
-  padding: 8px 12px;
+  padding: 6px 10px;
   border-bottom: 1px solid rgba(255, 255, 255, 0.06);
 }
 
@@ -516,18 +480,18 @@ function renderTagLink(tag: string) {
   background: rgba(255, 255, 255, 0.06);
   border: 1px solid rgba(255, 255, 255, 0.08);
   border-radius: 6px;
-  padding: 6px 8px;
+  padding: 5px 7px;
   color: #e8e8ed;
-  font-size: 12px;
+  font-size: 11px;
   resize: none;
   outline: none;
   font-family: inherit;
-  line-height: 1.5;
+  line-height: 1.4;
   box-sizing: border-box;
 }
 
 .memo-textarea::placeholder {
-  color: rgba(255, 255, 255, 0.3);
+  color: rgba(255, 255, 255, 0.25);
 }
 
 .memo-textarea:focus {
@@ -539,10 +503,10 @@ function renderTagLink(tag: string) {
   background: rgba(99, 102, 241, 0.6);
   border: none;
   color: #fff;
-  padding: 6px 12px;
+  padding: 5px 10px;
   border-radius: 6px;
   cursor: pointer;
-  font-size: 12px;
+  font-size: 11px;
   font-weight: 500;
   transition: background 0.15s;
   white-space: nowrap;
@@ -552,46 +516,93 @@ function renderTagLink(tag: string) {
   background: rgba(99, 102, 241, 0.8);
 }
 
-.memo-paste-confirm {
+.memo-add-btn:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
+.paste-confirm {
   display: flex;
   align-items: center;
-  gap: 6px;
-  padding: 6px 12px;
+  gap: 5px;
+  padding: 5px 10px;
   background: rgba(99, 102, 241, 0.12);
   border-bottom: 1px solid rgba(99, 102, 241, 0.15);
-  font-size: 11px;
+  font-size: 10px;
 }
 
 .paste-icon {
-  font-size: 14px;
+  font-size: 12px;
 }
 
 .paste-text {
   flex: 1;
-  color: rgba(255, 255, 255, 0.55);
+  color: rgba(255, 255, 255, 0.5);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.memo-list {
+.memo-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(255, 255, 255, 0.08);
+  border: none;
+  color: rgba(255, 255, 255, 0.6);
+  cursor: pointer;
+  border-radius: 5px;
+  padding: 3px 7px;
+  font-size: 10px;
+  transition: background 0.15s, color 0.15s;
+}
+
+.memo-btn:hover {
+  background: rgba(255, 255, 255, 0.15);
+  color: #fff;
+}
+
+.memo-btn-sm {
+  padding: 2px 7px;
+  font-size: 10px;
+}
+
+.memo-btn-primary {
+  background: rgba(99, 102, 241, 0.5);
+  color: #fff;
+}
+
+.memo-btn-primary:hover {
+  background: rgba(99, 102, 241, 0.75);
+}
+
+.memo-btn-icon {
+  padding: 3px;
+  background: transparent;
+}
+
+.memo-btn-icon:hover {
+  background: rgba(255, 255, 255, 0.12);
+}
+
+.popup-list {
   flex: 1;
   overflow-y: auto;
-  padding: 4px 0;
+  padding: 2px 0;
 }
 
-.memo-list::-webkit-scrollbar {
-  width: 4px;
+.popup-list::-webkit-scrollbar {
+  width: 3px;
 }
 
-.memo-list::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.15);
+.popup-list::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.12);
   border-radius: 2px;
 }
 
 .memo-item {
-  padding: 8px 12px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+  padding: 6px 10px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.03);
   transition: background 0.1s;
 }
 
@@ -604,12 +615,12 @@ function renderTagLink(tag: string) {
 }
 
 .memo-item-content {
-  font-size: 12px;
-  line-height: 1.6;
+  font-size: 11px;
+  line-height: 1.5;
   word-break: break-word;
   white-space: pre-wrap;
   cursor: text;
-  margin-bottom: 4px;
+  margin-bottom: 3px;
   color: rgba(255, 255, 255, 0.85);
 }
 
@@ -618,28 +629,28 @@ function renderTagLink(tag: string) {
 }
 
 .memo-markdown-preview :deep(p) {
-  margin: 0 0 4px;
+  margin: 0 0 3px;
 }
 
 .memo-markdown-preview :deep(ul),
 .memo-markdown-preview :deep(ol) {
-  margin: 4px 0;
-  padding-left: 16px;
+  margin: 3px 0;
+  padding-left: 14px;
 }
 
 .memo-markdown-preview :deep(code) {
   background: rgba(255, 255, 255, 0.08);
-  padding: 1px 4px;
-  border-radius: 3px;
-  font-size: 11px;
+  padding: 1px 3px;
+  border-radius: 2px;
+  font-size: 10px;
 }
 
 .memo-markdown-preview :deep(pre) {
   background: rgba(0, 0, 0, 0.3);
-  padding: 8px;
-  border-radius: 6px;
+  padding: 6px;
+  border-radius: 5px;
   overflow-x: auto;
-  margin: 4px 0;
+  margin: 3px 0;
 }
 
 .memo-markdown-preview :deep(pre code) {
@@ -650,12 +661,12 @@ function renderTagLink(tag: string) {
 .memo-item-tags {
   display: flex;
   flex-wrap: wrap;
-  gap: 3px;
-  margin-bottom: 4px;
+  gap: 2px;
+  margin-bottom: 3px;
 }
 
 .memo-tag {
-  font-size: 10px;
+  font-size: 9px;
   color: rgba(99, 102, 241, 0.6);
   cursor: pointer;
   transition: color 0.15s;
@@ -672,13 +683,13 @@ function renderTagLink(tag: string) {
 }
 
 .memo-item-time {
-  font-size: 10px;
-  color: rgba(255, 255, 255, 0.3);
+  font-size: 9px;
+  color: rgba(255, 255, 255, 0.25);
 }
 
 .memo-item-actions {
   display: flex;
-  gap: 2px;
+  gap: 1px;
   opacity: 0;
   transition: opacity 0.12s;
 }
@@ -691,51 +702,47 @@ function renderTagLink(tag: string) {
   width: 100%;
   background: rgba(255, 255, 255, 0.06);
   border: 1px solid rgba(255, 255, 255, 0.12);
-  border-radius: 6px;
-  padding: 6px 8px;
+  border-radius: 5px;
+  padding: 5px 7px;
   color: #e8e8ed;
-  font-size: 12px;
+  font-size: 11px;
   resize: vertical;
   outline: none;
   font-family: inherit;
-  line-height: 1.5;
+  line-height: 1.4;
   box-sizing: border-box;
-  margin-bottom: 6px;
+  margin-bottom: 5px;
 }
 
 .memo-edit-textarea:focus {
   border-color: rgba(99, 102, 241, 0.5);
 }
 
-.memo-empty {
+.popup-empty {
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 24px 12px;
-  font-size: 12px;
-  color: rgba(255, 255, 255, 0.3);
+  padding: 20px 10px;
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.25);
 }
 
-/* Transitions */
-.memo-fade-enter-active,
-.memo-fade-leave-active {
-  transition: opacity 0.2s ease, transform 0.2s ease;
+/* Slide-up popup animation */
+.popup-slide-enter-active {
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
-.memo-fade-enter-from,
-.memo-fade-leave-to {
+.popup-slide-leave-active {
+  transition: all 0.15s ease-in;
+}
+
+.popup-slide-enter-from {
+  opacity: 0;
+  transform: translateY(12px) scale(0.96);
+}
+
+.popup-slide-leave-to {
   opacity: 0;
   transform: translateY(8px) scale(0.97);
-}
-
-.memo-slide-enter-active,
-.memo-slide-leave-active {
-  transition: all 0.2s ease;
-}
-
-.memo-slide-enter-from,
-.memo-slide-leave-to {
-  opacity: 0;
-  transform: translateY(-4px);
 }
 </style>

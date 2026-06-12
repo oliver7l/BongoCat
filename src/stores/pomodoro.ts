@@ -25,6 +25,9 @@ export const usePomodoroStore = defineStore('pomodoro', () => {
   // 番茄时钟功能开关
   const enabled = ref(false)
 
+  // 弹窗显示
+  const showPopover = ref(false)
+
   // 番茄时钟配置
   const settings = ref<PomodoroSettings>({
     workDuration: 25,
@@ -136,6 +139,7 @@ export const usePomodoroStore = defineStore('pomodoro', () => {
 
   return {
     enabled,
+    showPopover,
     settings,
     isRunning,
     currentPhase,
